@@ -12,6 +12,10 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+
+	state "github.com/0xPolygon/eth-state-transition"
+	itrie "github.com/0xPolygon/eth-state-transition/immutable-trie"
+	"github.com/0xPolygon/eth-state-transition/runtime"
 )
 
 func main() {
@@ -25,18 +29,39 @@ func main() {
 		panic(err)
 	}
 
-	i.Seek(10)
+	stateArchive := itrie.NewArchiveState(itrie.NewMemoryStorage())
+	snap := stateArchive.NewSnapshot()
+
+	i.Seek(0)
 	for {
 		block, err := i.Next()
 		if err != nil {
 			panic(err)
 		}
+
 		if block == nil {
 			break
 		}
 		fmt.Printf("Block %d: Num transactions %d\n", block.Header.Number, len(block.Transactions))
-	}
 
+		forks := runtime.ForksInTime{}
+		config := runtime.TxContext{}
+		transition := state.NewTransition(forks, config, snap)
+
+		for _, rawtxn := range block.Transactions {
+			// TODO: Decode transaction from
+
+			txn := &state.Transaction{
+				Input: rawtxn.Input,
+			}
+			if _, err := transition.Write(txn); err != nil {
+				panic(err)
+			}
+		}
+
+		objs := transition.Commit()
+		snap.Commit(objs)
+	}
 }
 
 const indexEntrySize = int64(6)
